@@ -1,0 +1,8 @@
+[package]
+name = "nanogpt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+burn = { version = "0.19.1", features = ["std", "train", "tui", "wgpu"] }
+rustc-hash = "2.1.1"
