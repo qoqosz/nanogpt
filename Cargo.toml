@@ -4,5 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-burn = { version = "0.19.1", features = ["std", "train", "tui", "wgpu"] }
+burn = { version = "0.20.0", features = ["std", "tch", "train", "tui", "wgpu"] }
+rand = "0.9.2"
 rustc-hash = "2.1.1"
+serde = "1.0.228"
