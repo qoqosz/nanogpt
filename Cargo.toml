@@ -3,8 +3,22 @@ name = "nanogpt"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "nanogpt"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bigram"
+path = "src/bin/bigram.rs"
+
+[[bin]]
+name = "sandbox"
+path = "src/bin/sandbox.rs"
+
 [dependencies]
-burn = { version = "0.20.0", features = ["std", "tch", "train", "tui", "wgpu"] }
+burn = { version = "0.20.0", features = ["std", "train", "tui", "wgpu"] }
+itertools = "0.14.0"
+pico-args = "0.5.0"
 rand = "0.9.2"
 rustc-hash = "2.1.1"
 serde = "1.0.228"
