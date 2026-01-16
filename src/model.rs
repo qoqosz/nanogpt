@@ -10,6 +10,12 @@ use burn::{
     train::{ClassificationOutput, InferenceStep, TrainOutput, TrainStep},
 };
 
+pub trait LanguageModel {
+    type Tokens;
+
+    fn generate(&self, idx: Self::Tokens, max_new_tokens: usize) -> Self::Tokens;
+}
+
 #[derive(Debug, Module)]
 pub struct BigramLanguageModel<B: Backend> {
     token_embedding_table: Embedding<B>,
@@ -35,8 +41,13 @@ impl<B: Backend> BigramLanguageModel<B> {
 
         ClassificationOutput::new(loss, output, targets)
     }
+}
 
-    pub fn generate(&self, idx: Tensor<B, 2, Int>, max_new_tokens: usize) -> Tensor<B, 2, Int> {
+// TODO: try to make it more generic
+impl<B: Backend> LanguageModel for BigramLanguageModel<B> {
+    type Tokens = Tensor<B, 2, Int>;
+
+    fn generate(&self, idx: Self::Tokens, max_new_tokens: usize) -> Self::Tokens {
         let mut idx = idx;
         let device = idx.device();
 
@@ -65,7 +76,6 @@ impl<B: Backend> BigramLanguageModel<B> {
             let idx_next = Tensor::cat(idx_next, 0);
             idx = Tensor::cat(vec![idx, idx_next], 1);
         }
-
         idx
     }
 }

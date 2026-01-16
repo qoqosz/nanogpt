@@ -1,4 +1,5 @@
 use crate::data::{Tokenizer, Vocabulary};
+use crate::model::LanguageModel;
 use crate::train::BigramLanguageModelTrainingConfig;
 use burn::{
     Tensor,

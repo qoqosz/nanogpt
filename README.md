@@ -23,6 +23,12 @@ cargo build --release
 
 #### Run the examples
 
+Run the sandbox/scratchpad:
+
+```
+cargo run --bin sandbox
+```
+
 Run the bigram example:
 
 ```
