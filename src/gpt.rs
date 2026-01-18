@@ -1,7 +1,7 @@
 use crate::data::{N, TextBatch, TextBatcher, TextDataset};
 use crate::infer::LanguageModelInference;
 use crate::utils::{create_artifact_dir, multinomial_sample};
-use burn::nn::{Dropout, DropoutConfig, Linear, LinearConfig};
+use burn::nn::{Dropout, DropoutConfig, Linear, LinearConfig, Relu};
 use burn::{
     Tensor,
     config::Config,
@@ -69,6 +69,7 @@ impl HeadConfig {
     }
 }
 
+/// Multiple heads of self-attention in parallel.
 #[derive(Debug, Module)]
 pub struct MultiHeadAttention<B: Backend> {
     heads: Vec<Head<B>>,
@@ -111,11 +112,48 @@ impl MultiHeadAttentionConfig {
     }
 }
 
+/// A simple linear layer followed by a non-linearity.
+#[derive(Debug, Module)]
+pub struct FeedForward<B: Backend> {
+    linear: [Linear<B>; 2],
+    relu: Relu,
+    dropout: Dropout,
+}
+
+impl<B: Backend> FeedForward<B> {
+    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
+        let x = self.linear[0].forward(x);
+        let x = self.relu.forward(x);
+        let x = self.linear[1].forward(x);
+        self.dropout.forward(x)
+    }
+}
+
+#[derive(Debug, Config)]
+pub struct FeedForwardConfig {
+    n_embd: usize,
+    dropout: f64,
+}
+
+impl FeedForwardConfig {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> FeedForward<B> {
+        FeedForward {
+            linear: [
+                LinearConfig::new(self.n_embd, self.n_embd).init::<B>(device),
+                LinearConfig::new(self.n_embd, self.n_embd).init::<B>(device),
+            ],
+            relu: Relu::new(),
+            dropout: DropoutConfig::new(self.dropout).init(),
+        }
+    }
+}
+
 #[derive(Debug, Module)]
 pub struct NanoGPTModel<B: Backend> {
     token_embedding_table: Embedding<B>,
     position_embedding_table: Embedding<B>,
     sa_head: MultiHeadAttention<B>,
+    ffwd: FeedForward<B>,
     lm_head: Linear<B>,
 }
 
@@ -129,6 +167,7 @@ impl<B: Backend> NanoGPTModel<B> {
         let pos_emb = self.position_embedding_table.forward(ts);
         let x = tok_emb + pos_emb;
         let x = self.sa_head.forward(x);
+        let x = self.ffwd.forward(x);
         let logits = self.lm_head.forward(x);
 
         logits
@@ -224,6 +263,7 @@ impl NanoGPTModelConfig {
             position_embedding_table: EmbeddingConfig::new(N, self.n_embd).init(device),
             sa_head: MultiHeadAttentionConfig::new(4, self.n_embd, self.head_size, 0.2)
                 .init(device),
+            ffwd: FeedForwardConfig::new(self.n_embd, 0.2).init(device),
             lm_head: LinearConfig::new(self.n_embd, vocab_size).init(device),
         }
     }
