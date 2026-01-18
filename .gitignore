@@ -1,2 +1,5 @@
+/.ipynb_checkpoints
+/.venv
+/*.ipynb
 /target
 /bigram

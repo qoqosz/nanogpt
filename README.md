@@ -32,7 +32,7 @@ cargo run --bin sandbox
 Run the bigram example:
 
 ```
-cargo run --bin bigram -- --train  -n 1 -p 10 -o /tmp/bigram/ --infer -c "What time is it?" -m 50
+cargo run -- --train --model bigram -n 1 -p 10 -o /tmp/bigram/ --infer -c "What time is it?" -m 50
 ```
 
 ## Notes

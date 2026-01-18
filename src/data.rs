@@ -10,7 +10,7 @@ use rustc_hash::FxHashMap;
 use std::marker::PhantomData;
 
 // Context window size
-static N: usize = 8;
+pub static N: usize = 8;
 
 pub trait Tokenizer {
     // Associated token type

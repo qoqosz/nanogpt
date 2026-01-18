@@ -2,14 +2,11 @@
 name = "nanogpt"
 version = "0.1.0"
 edition = "2024"
+default-run = "nanogpt"
 
 [lib]
 name = "nanogpt"
 path = "src/lib.rs"
-
-[[bin]]
-name = "bigram"
-path = "src/bin/bigram.rs"
 
 [[bin]]
 name = "sandbox"

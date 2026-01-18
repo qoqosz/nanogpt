@@ -1,20 +1,22 @@
-use crate::data::TextBatch;
-use crate::utils::multinomial_sample;
+use crate::data::{TextBatch, TextBatcher, TextDataset};
+use crate::infer::LanguageModelInference;
+use crate::utils::{create_artifact_dir, multinomial_sample};
 use burn::{
     Tensor,
     config::Config,
+    data::dataloader::DataLoaderBuilder,
     module::Module,
     nn::{Embedding, EmbeddingConfig, loss::CrossEntropyLossConfig},
+    optim::AdamWConfig,
     prelude::{Backend, Int},
+    record::CompactRecorder,
     tensor::{TensorData, activation::softmax, backend::AutodiffBackend, s},
-    train::{ClassificationOutput, InferenceStep, TrainOutput, TrainStep},
+    train::{
+        ClassificationOutput, InferenceStep, Learner, SupervisedTraining, TrainOutput, TrainStep,
+        metric::LossMetric,
+    },
 };
-
-pub trait LanguageModel {
-    type Tokens;
-
-    fn generate(&self, idx: Self::Tokens, max_new_tokens: usize) -> Self::Tokens;
-}
+use std::fs;
 
 #[derive(Debug, Module)]
 pub struct BigramLanguageModel<B: Backend> {
@@ -43,8 +45,7 @@ impl<B: Backend> BigramLanguageModel<B> {
     }
 }
 
-// TODO: try to make it more generic
-impl<B: Backend> LanguageModel for BigramLanguageModel<B> {
+impl<B: Backend> LanguageModelInference for BigramLanguageModel<B> {
     type Tokens = Tensor<B, 2, Int>;
 
     fn generate(&self, idx: Self::Tokens, max_new_tokens: usize) -> Self::Tokens {
@@ -103,16 +104,76 @@ impl<B: Backend> InferenceStep for BigramLanguageModel<B> {
 #[derive(Debug, Config)]
 pub struct BigramLanguageModelConfig {
     pub vocabulary: Vec<u8>,
+    pub n_embd: usize,
+    pub head_size: usize,
 }
 
 impl BigramLanguageModelConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> BigramLanguageModel<B> {
+        let vocab_size = self.vocabulary.len();
+
         BigramLanguageModel {
-            token_embedding_table: EmbeddingConfig::new(
-                self.vocabulary.len(),
-                self.vocabulary.len(),
-            )
-            .init(device),
+            token_embedding_table: EmbeddingConfig::new(vocab_size, self.n_embd).init(device),
         }
     }
+}
+
+#[derive(Config, Debug)]
+pub struct BigramLanguageModelTrainingConfig {
+    pub model: BigramLanguageModelConfig,
+    pub optimizer: AdamWConfig,
+    #[config(default = 10)]
+    pub num_epochs: usize,
+    #[config(default = 64)]
+    pub batch_size: usize,
+    #[config(default = 6)]
+    pub num_workers: usize,
+    #[config(default = 43)]
+    pub seed: u64,
+    #[config(default = 1.0e-3)]
+    pub learning_rate: f64,
+}
+
+pub fn bigram_lm_train<B: AutodiffBackend>(
+    artifact_dir: &str,
+    config: BigramLanguageModelTrainingConfig,
+    device: &B::Device,
+) {
+    create_artifact_dir(artifact_dir);
+    config
+        .save(format!("{artifact_dir}/config.json"))
+        .expect("Config should be saved successfully");
+
+    B::seed(device, config.seed);
+
+    let text = fs::read_to_string("data/input.txt").unwrap();
+    let dataset = TextDataset::new(&text);
+
+    let dataloader_train = DataLoaderBuilder::new(TextBatcher::new())
+        .batch_size(config.batch_size)
+        .num_workers(config.num_workers)
+        .build(dataset.train());
+    let dataloader_valid = DataLoaderBuilder::new(TextBatcher::new())
+        .batch_size(config.batch_size)
+        .num_workers(config.num_workers)
+        .build(dataset.valid());
+
+    let training = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_valid)
+        .metrics((LossMetric::new(),))
+        .with_file_checkpointer(CompactRecorder::new())
+        .num_epochs(config.num_epochs)
+        .summary();
+
+    // Initialize the model on the autodiff backend `B` (so Training can compute gradients).
+    let model = config.model.init::<B>(device);
+    let result = training.launch(Learner::new(
+        model,
+        config.optimizer.init(),
+        config.learning_rate,
+    ));
+
+    result
+        .model
+        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
+        .expect("Trained model should be saved successfully")
 }
