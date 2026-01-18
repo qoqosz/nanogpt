@@ -10,7 +10,7 @@ use rustc_hash::FxHashMap;
 use std::marker::PhantomData;
 
 // Context window size
-pub static N: usize = 8;
+pub static N: usize = 32;
 
 pub trait Tokenizer {
     // Associated token type
@@ -159,13 +159,13 @@ impl<B: Backend> Batcher<B, TextItem, TextBatch<B>> for TextBatcher<B> {
             .iter()
             .map(|item| TensorData::from(item.x))
             .map(|data| Tensor::<B, 1, Int>::from_data(data, device))
-            .map(|tensor| tensor.reshape([1, N]))
+            .map(|tensor| tensor.reshape([1, -1]))
             .collect();
         let targets = items
             .iter()
             .map(|item| TensorData::from(item.y))
             .map(|data| Tensor::<B, 1, Int>::from_data(data, device))
-            .map(|tensor| tensor.reshape([1, N]))
+            .map(|tensor| tensor.reshape([1, -1]))
             .collect();
 
         let context = Tensor::cat(context, 0);

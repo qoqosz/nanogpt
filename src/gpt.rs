@@ -1,7 +1,7 @@
 use crate::data::{N, TextBatch, TextBatcher, TextDataset};
 use crate::infer::LanguageModelInference;
 use crate::utils::{create_artifact_dir, multinomial_sample};
-use burn::nn::{Dropout, DropoutConfig, Linear, LinearConfig, Relu};
+use burn::nn::{Dropout, DropoutConfig, LayerNorm, LayerNormConfig, Linear, LinearConfig, Relu};
 use burn::{
     Tensor,
     config::Config,
@@ -19,11 +19,13 @@ use burn::{
 };
 use std::fs;
 
+/// One head of self-attention.
 #[derive(Debug, Module)]
 pub struct Head<B: Backend> {
     key: Linear<B>,
     query: Linear<B>,
     value: Linear<B>,
+    dropout: Dropout,
 }
 
 impl<B: Backend> Head<B> {
@@ -41,6 +43,7 @@ impl<B: Backend> Head<B> {
         let wei = q.matmul(k.t()) / (c as f32).sqrt();
         let wei = wei.mask_fill(mask, f32::MIN);
         let wei = softmax(wei, 2);
+        let wei = self.dropout.forward(wei);
 
         // perform the weighted aggregation of the values
         wei.matmul(v)
@@ -51,6 +54,7 @@ impl<B: Backend> Head<B> {
 pub struct HeadConfig {
     pub n_embd: usize,
     pub head_size: usize,
+    pub dropout: f64,
 }
 
 impl HeadConfig {
@@ -65,6 +69,7 @@ impl HeadConfig {
             value: LinearConfig::new(self.n_embd, self.head_size)
                 .with_bias(false)
                 .init(device),
+            dropout: DropoutConfig::new(self.dropout).init(),
         }
     }
 }
@@ -92,7 +97,7 @@ impl<B: Backend> MultiHeadAttention<B> {
 
 #[derive(Debug, Config)]
 pub struct MultiHeadAttentionConfig {
-    pub num_head: usize,
+    pub n_heads: usize,
     pub n_embd: usize,
     pub head_size: usize,
     pub prob: f64,
@@ -101,9 +106,10 @@ pub struct MultiHeadAttentionConfig {
 impl MultiHeadAttentionConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> MultiHeadAttention<B> {
         MultiHeadAttention {
-            heads: (0..self.num_head)
+            heads: (0..self.n_heads)
                 .map(|_| {
-                    HeadConfig::new(self.n_embd, self.head_size / self.num_head).init::<B>(device)
+                    HeadConfig::new(self.n_embd, self.head_size / self.n_heads, 0.2)
+                        .init::<B>(device)
                 })
                 .collect(),
             proj: LinearConfig::new(self.n_embd, self.n_embd).init(device),
@@ -139,8 +145,8 @@ impl FeedForwardConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> FeedForward<B> {
         FeedForward {
             linear: [
-                LinearConfig::new(self.n_embd, self.n_embd).init::<B>(device),
-                LinearConfig::new(self.n_embd, self.n_embd).init::<B>(device),
+                LinearConfig::new(self.n_embd, 2 * self.n_embd).init::<B>(device),
+                LinearConfig::new(2 * self.n_embd, self.n_embd).init::<B>(device),
             ],
             relu: Relu::new(),
             dropout: DropoutConfig::new(self.dropout).init(),
@@ -148,12 +154,52 @@ impl FeedForwardConfig {
     }
 }
 
+/// Transformer block: communication followed by computation.
+#[derive(Debug, Module)]
+pub struct Block<B: Backend> {
+    sa: MultiHeadAttention<B>,
+    ffwd: FeedForward<B>,
+    norms: [LayerNorm<B>; 2],
+}
+
+impl<B: Backend> Block<B> {
+    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
+        let x = self.norms[0].forward(x);
+        let x = self.sa.forward(x.clone()) + x;
+        let x = self.norms[1].forward(x);
+        self.ffwd.forward(x.clone()) + x
+    }
+}
+
+#[derive(Debug, Config)]
+pub struct BlockConfig {
+    pub n_embd: usize,
+    pub n_heads: usize,
+    pub head_size: usize,
+}
+
+impl BlockConfig {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> Block<B> {
+        Block {
+            sa: MultiHeadAttentionConfig::new(self.n_heads, self.n_embd, self.head_size, 0.2)
+                .init(device),
+
+            ffwd: FeedForwardConfig::new(self.n_embd, 0.2).init(device),
+            norms: [
+                LayerNormConfig::new(self.n_embd).init(device),
+                LayerNormConfig::new(self.n_embd).init(device),
+            ],
+        }
+    }
+}
+
+/// Super simple GPT model
 #[derive(Debug, Module)]
 pub struct NanoGPTModel<B: Backend> {
     token_embedding_table: Embedding<B>,
     position_embedding_table: Embedding<B>,
-    sa_head: MultiHeadAttention<B>,
-    ffwd: FeedForward<B>,
+    blocks: Vec<Block<B>>,
+    ln_f: LayerNorm<B>,
     lm_head: Linear<B>,
 }
 
@@ -166,8 +212,8 @@ impl<B: Backend> NanoGPTModel<B> {
         let tok_emb = self.token_embedding_table.forward(idx);
         let pos_emb = self.position_embedding_table.forward(ts);
         let x = tok_emb + pos_emb;
-        let x = self.sa_head.forward(x);
-        let x = self.ffwd.forward(x);
+        let x = self.blocks.iter().fold(x, |y, block| block.forward(y));
+        let x = self.ln_f.forward(x);
         let logits = self.lm_head.forward(x);
 
         logits
@@ -251,7 +297,9 @@ impl<B: Backend> InferenceStep for NanoGPTModel<B> {
 pub struct NanoGPTModelConfig {
     pub vocabulary: Vec<u8>,
     pub n_embd: usize,
+    pub n_heads: usize,
     pub head_size: usize,
+    pub n_layer: usize,
 }
 
 impl NanoGPTModelConfig {
@@ -261,9 +309,10 @@ impl NanoGPTModelConfig {
         NanoGPTModel {
             token_embedding_table: EmbeddingConfig::new(vocab_size, self.n_embd).init(device),
             position_embedding_table: EmbeddingConfig::new(N, self.n_embd).init(device),
-            sa_head: MultiHeadAttentionConfig::new(4, self.n_embd, self.head_size, 0.2)
-                .init(device),
-            ffwd: FeedForwardConfig::new(self.n_embd, 0.2).init(device),
+            blocks: (0..self.n_layer)
+                .map(|_| BlockConfig::new(self.n_embd, self.n_heads, self.head_size).init(device))
+                .collect(),
+            ln_f: LayerNormConfig::new(self.n_embd).init(device),
             lm_head: LinearConfig::new(self.n_embd, vocab_size).init(device),
         }
     }
@@ -340,7 +389,7 @@ mod tests {
         let device = burn::backend::wgpu::WgpuDevice::default();
         let dist = burn::tensor::Distribution::Normal(0.0, 1.0);
         let x = Tensor::<MyBackend, 3>::random([4, 8, 32], dist, &device);
-        let head = HeadConfig::new(32, 16).init(&device);
+        let head = HeadConfig::new(32, 16, 0.2).init(&device);
         let out = head.forward(x);
 
         assert_eq!(out.shape().dims(), [4, 8, 16]);

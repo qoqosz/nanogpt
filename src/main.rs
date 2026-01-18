@@ -90,7 +90,7 @@ fn main() -> Result<(), pico_args::Error> {
         // Training
         if args.train {
             let config = NanoGPTModelTrainingConfig::new(
-                NanoGPTModelConfig::new(dataset.vocabulary.chars, 32, 32),
+                NanoGPTModelConfig::new(dataset.vocabulary.chars, 32, 4, 32, 3),
                 AdamWConfig::new(),
             )
             .with_num_epochs(args.num_epochs)
