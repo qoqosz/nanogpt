@@ -1,7 +1,7 @@
 use crate::data::{N, TextBatch, TextBatcher, TextDataset};
 use crate::infer::LanguageModelInference;
 use crate::utils::{create_artifact_dir, multinomial_sample};
-use burn::nn::{Linear, LinearConfig};
+use burn::nn::{Dropout, DropoutConfig, Linear, LinearConfig};
 use burn::{
     Tensor,
     config::Config,
@@ -70,10 +70,52 @@ impl HeadConfig {
 }
 
 #[derive(Debug, Module)]
+pub struct MultiHeadAttention<B: Backend> {
+    heads: Vec<Head<B>>,
+    proj: Linear<B>,
+    dropout: Dropout,
+}
+
+impl<B: Backend> MultiHeadAttention<B> {
+    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
+        let heads_out = self
+            .heads
+            .iter()
+            .map(|head| head.forward(x.clone()))
+            .collect();
+        let out = Tensor::cat(heads_out, 2);
+        let out = self.proj.forward(out);
+        self.dropout.forward(out)
+    }
+}
+
+#[derive(Debug, Config)]
+pub struct MultiHeadAttentionConfig {
+    pub num_head: usize,
+    pub n_embd: usize,
+    pub head_size: usize,
+    pub prob: f64,
+}
+
+impl MultiHeadAttentionConfig {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> MultiHeadAttention<B> {
+        MultiHeadAttention {
+            heads: (0..self.num_head)
+                .map(|_| {
+                    HeadConfig::new(self.n_embd, self.head_size / self.num_head).init::<B>(device)
+                })
+                .collect(),
+            proj: LinearConfig::new(self.n_embd, self.n_embd).init(device),
+            dropout: DropoutConfig::new(self.prob).init(),
+        }
+    }
+}
+
+#[derive(Debug, Module)]
 pub struct NanoGPTModel<B: Backend> {
     token_embedding_table: Embedding<B>,
     position_embedding_table: Embedding<B>,
-    sa_head: Head<B>,
+    sa_head: MultiHeadAttention<B>,
     lm_head: Linear<B>,
 }
 
@@ -180,7 +222,8 @@ impl NanoGPTModelConfig {
         NanoGPTModel {
             token_embedding_table: EmbeddingConfig::new(vocab_size, self.n_embd).init(device),
             position_embedding_table: EmbeddingConfig::new(N, self.n_embd).init(device),
-            sa_head: HeadConfig::new(self.n_embd, self.head_size).init(device),
+            sa_head: MultiHeadAttentionConfig::new(4, self.n_embd, self.head_size, 0.2)
+                .init(device),
             lm_head: LinearConfig::new(self.n_embd, vocab_size).init(device),
         }
     }
