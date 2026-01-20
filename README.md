@@ -37,6 +37,14 @@ Run the `bigram`/`nanogpt` training:
 cargo run --release -- --train --model nanogpt -n 1 -p 10 -o /tmp/bigram/ --infer -c "What time is it?" -m 50
 ```
 
+### Reference Implementation
+
+`gpt.py` contains the reference implementation which can be run with:
+
+```
+uv run gpt.py
+```
+
 ![training](data/training.png)
 
 ## Notes

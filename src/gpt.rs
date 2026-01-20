@@ -138,8 +138,8 @@ impl FeedForwardConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> FeedForward<B> {
         FeedForward {
             linear: [
-                LinearConfig::new(self.n_embd, 2 * self.n_embd).init::<B>(device),
-                LinearConfig::new(2 * self.n_embd, self.n_embd).init::<B>(device),
+                LinearConfig::new(self.n_embd, 4 * self.n_embd).init::<B>(device),
+                LinearConfig::new(4 * self.n_embd, self.n_embd).init::<B>(device),
             ],
             relu: Relu::new(),
             dropout: DropoutConfig::new(self.dropout).init(),
