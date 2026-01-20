@@ -17,5 +17,4 @@ burn = { version = "0.20.0", features = ["std", "train", "tui", "wgpu"] }
 itertools = "0.14.0"
 pico-args = "0.5.0"
 rand = "0.9.2"
-rustc-hash = "2.1.1"
 serde = "1.0.228"

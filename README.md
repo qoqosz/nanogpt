@@ -37,6 +37,8 @@ Run the `bigram`/`nanogpt` training:
 cargo run --release -- --train --model nanogpt -n 1 -p 10 -o /tmp/bigram/ --infer -c "What time is it?" -m 50
 ```
 
+![training](data/training.png)
+
 ### Reference Implementation
 
 `gpt.py` contains the reference implementation which can be run with:
@@ -45,7 +47,13 @@ cargo run --release -- --train --model nanogpt -n 1 -p 10 -o /tmp/bigram/ --infe
 uv run gpt.py
 ```
 
-![training](data/training.png)
+## Sample Output
+
+```
+Predicted:  spire.
+                                                                                                                       
+Bed riene you so on, for And. You hame: as is I this the merce thou mont Sirroudies, their go 
+```
 
 ## Notes
 

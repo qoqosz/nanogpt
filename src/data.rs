@@ -6,7 +6,7 @@ use burn::{
     tensor::TensorData,
 };
 use itertools::Itertools;
-use rustc_hash::FxHashMap;
+use std::collections::HashMap;
 use std::marker::PhantomData;
 
 // Context window size
@@ -28,20 +28,20 @@ pub struct Vocabulary {
     // Actual vocabulary
     pub chars: Vec<u8>,
     // Char to int mapping
-    stoi: FxHashMap<u8, u8>,
+    stoi: HashMap<u8, u8>,
     // Int to char mapping
-    itos: FxHashMap<u8, u8>,
+    itos: HashMap<u8, u8>,
 }
 
 impl Vocabulary {
     pub fn new(chars: &[u8]) -> Self {
-        let chars: Vec<u8> = chars.iter().copied().unique().collect();
-        let stoi: FxHashMap<u8, u8> = chars
+        let chars: Vec<u8> = chars.iter().copied().unique().sorted_unstable().collect();
+        let stoi: HashMap<u8, u8> = chars
             .iter()
             .enumerate()
             .map(|(i, ch)| (*ch, i as u8))
             .collect();
-        let itos: FxHashMap<u8, u8> = stoi.iter().map(|(ch, i)| (*i, *ch)).collect();
+        let itos: HashMap<u8, u8> = stoi.iter().map(|(ch, i)| (*i, *ch)).collect();
 
         Self { chars, stoi, itos }
     }
