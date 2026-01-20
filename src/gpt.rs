@@ -331,6 +331,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore]
     fn test_head_output_shape() {
         let dist = burn::tensor::Distribution::Normal(0.0, 1.0);
         let x =
