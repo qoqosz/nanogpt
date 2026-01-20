@@ -1,23 +1,16 @@
-use crate::data::{N, TextBatch, TextBatcher, TextDataset};
+use crate::data::{N, TextBatch};
 use crate::infer::LanguageModelInference;
-use crate::utils::{create_artifact_dir, multinomial_sample};
+use crate::utils::multinomial_sample;
 use burn::nn::{Dropout, DropoutConfig, LayerNorm, LayerNormConfig, Linear, LinearConfig, Relu};
 use burn::{
     Tensor,
     config::Config,
-    data::dataloader::DataLoaderBuilder,
     module::Module,
     nn::{Embedding, EmbeddingConfig, loss::CrossEntropyLossConfig},
-    optim::AdamWConfig,
     prelude::{Backend, Int},
-    record::CompactRecorder,
     tensor::{Bool, TensorData, activation::softmax, backend::AutodiffBackend, s},
-    train::{
-        ClassificationOutput, InferenceStep, Learner, SupervisedTraining, TrainOutput, TrainStep,
-        metric::LossMetric,
-    },
+    train::{ClassificationOutput, InferenceStep, TrainOutput, TrainStep},
 };
-use std::fs;
 
 /// One head of self-attention.
 #[derive(Debug, Module)]
@@ -321,7 +314,6 @@ impl NanoGPTModelConfig {
 #[derive(Config, Debug)]
 pub struct NanoGPTModelTrainingConfig {
     pub model: NanoGPTModelConfig,
-    pub optimizer: AdamWConfig,
     #[config(default = 10)]
     pub num_epochs: usize,
     #[config(default = 64)]
@@ -334,62 +326,16 @@ pub struct NanoGPTModelTrainingConfig {
     pub learning_rate: f64,
 }
 
-pub fn nanogpt_train<B: AutodiffBackend>(
-    artifact_dir: &str,
-    config: NanoGPTModelTrainingConfig,
-    device: &B::Device,
-) {
-    create_artifact_dir(artifact_dir);
-    config
-        .save(format!("{artifact_dir}/config.json"))
-        .expect("Config should be saved successfully");
-
-    B::seed(device, config.seed);
-
-    let text = fs::read_to_string("data/input.txt").unwrap();
-    let dataset = TextDataset::new(&text);
-
-    let dataloader_train = DataLoaderBuilder::new(TextBatcher::new())
-        .batch_size(config.batch_size)
-        .num_workers(config.num_workers)
-        .build(dataset.train());
-    let dataloader_valid = DataLoaderBuilder::new(TextBatcher::new())
-        .batch_size(config.batch_size)
-        .num_workers(config.num_workers)
-        .build(dataset.valid());
-
-    let training = SupervisedTraining::new(artifact_dir, dataloader_train, dataloader_valid)
-        .metrics((LossMetric::new(),))
-        .with_file_checkpointer(CompactRecorder::new())
-        .num_epochs(config.num_epochs)
-        .summary();
-
-    // Initialize the model on the autodiff backend `B` (so Training can compute gradients).
-    let model = config.model.init::<B>(device);
-    let result = training.launch(Learner::new(
-        model,
-        config.optimizer.init(),
-        config.learning_rate,
-    ));
-
-    result
-        .model
-        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
-        .expect("Trained model should be saved successfully")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    type MyBackend = burn::backend::Wgpu<f32, i32>;
-
     #[test]
     fn test_head_output_shape() {
-        let device = burn::backend::wgpu::WgpuDevice::default();
         let dist = burn::tensor::Distribution::Normal(0.0, 1.0);
-        let x = Tensor::<MyBackend, 3>::random([4, 8, 32], dist, &device);
-        let head = HeadConfig::new(32, 16, 0.2).init(&device);
+        let x =
+            Tensor::<burn::backend::wgpu::Wgpu, 3>::random([4, 8, 32], dist, &Default::default());
+        let head = HeadConfig::new(32, 16, 0.2).init(&Default::default());
         let out = head.forward(x);
 
         assert_eq!(out.shape().dims(), [4, 8, 16]);

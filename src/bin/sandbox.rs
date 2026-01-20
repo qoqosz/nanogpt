@@ -1,6 +1,7 @@
+#![allow(unused, unused_imports)]
 use burn::Tensor;
 use burn::backend::wgpu::WgpuDevice;
-use burn::nn::{Embedding, EmbeddingConfig, LinearConfig};
+use burn::nn::LinearConfig;
 use burn::tensor::Bool;
 use burn::tensor::activation::softmax;
 use burn::{backend::Wgpu, data::dataloader::DataLoaderBuilder};

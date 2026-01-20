@@ -29,11 +29,15 @@ Run the sandbox/scratchpad:
 cargo run --bin sandbox
 ```
 
-Run the bigram example:
+#### Train and Inference
+
+Run the `bigram`/`nanogpt` training:
 
 ```
-cargo run -- --train --model bigram -n 1 -p 10 -o /tmp/bigram/ --infer -c "What time is it?" -m 50
+cargo run --release -- --train --model nanogpt -n 1 -p 10 -o /tmp/bigram/ --infer -c "What time is it?" -m 50
 ```
+
+![training](data/training.png)
 
 ## Notes
 
