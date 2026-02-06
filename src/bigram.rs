@@ -125,3 +125,40 @@ pub struct BigramLanguageModelTrainingConfig {
     #[config(default = 1.0e-3)]
     pub learning_rate: f64,
 }
+
+pub struct BigramSpec;
+
+impl<B, AD> crate::utils::ModelSpec<B, AD> for BigramSpec
+where
+    B: Backend,
+    AD: AutodiffBackend<InnerBackend = B>,
+{
+    type TrainConfig = BigramLanguageModelTrainingConfig;
+    type TrainModel = BigramLanguageModel<AD>;
+    type InferModel = BigramLanguageModel<B>;
+    type Record = BigramLanguageModelRecord<B>;
+
+    fn build_config(vocab: Vec<u8>, args: &crate::utils::AppArgs) -> Self::TrainConfig {
+        BigramLanguageModelTrainingConfig::new(BigramLanguageModelConfig::new(vocab, 32, 16))
+            .with_num_epochs(args.num_epochs)
+            .with_num_workers(args.num_workers)
+    }
+
+    fn train_params(config: &Self::TrainConfig) -> (usize, usize, usize, u64, f64) {
+        (
+            config.num_epochs,
+            config.batch_size,
+            config.num_workers,
+            config.seed,
+            config.learning_rate,
+        )
+    }
+
+    fn init_train(config: &Self::TrainConfig, device: &AD::Device) -> Self::TrainModel {
+        config.model.init::<AD>(device)
+    }
+
+    fn init_infer(config: &Self::TrainConfig, device: &B::Device) -> Self::InferModel {
+        config.model.init::<B>(device)
+    }
+}

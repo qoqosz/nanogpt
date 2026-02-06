@@ -326,6 +326,43 @@ pub struct NanoGPTModelTrainingConfig {
     pub learning_rate: f64,
 }
 
+pub struct NanoGPTSpec;
+
+impl<B, AD> crate::utils::ModelSpec<B, AD> for NanoGPTSpec
+where
+    B: Backend,
+    AD: AutodiffBackend<InnerBackend = B>,
+{
+    type TrainConfig = NanoGPTModelTrainingConfig;
+    type TrainModel = NanoGPTModel<AD>;
+    type InferModel = NanoGPTModel<B>;
+    type Record = NanoGPTModelRecord<B>;
+
+    fn build_config(vocab: Vec<u8>, args: &crate::utils::AppArgs) -> Self::TrainConfig {
+        NanoGPTModelTrainingConfig::new(NanoGPTModelConfig::new(vocab, 32, 4, 32, 3))
+            .with_num_epochs(args.num_epochs)
+            .with_num_workers(args.num_workers)
+    }
+
+    fn train_params(config: &Self::TrainConfig) -> (usize, usize, usize, u64, f64) {
+        (
+            config.num_epochs,
+            config.batch_size,
+            config.num_workers,
+            config.seed,
+            config.learning_rate,
+        )
+    }
+
+    fn init_train(config: &Self::TrainConfig, device: &AD::Device) -> Self::TrainModel {
+        config.model.init::<AD>(device)
+    }
+
+    fn init_infer(config: &Self::TrainConfig, device: &B::Device) -> Self::InferModel {
+        config.model.init::<B>(device)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

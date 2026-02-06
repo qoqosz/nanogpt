@@ -1,6 +1,20 @@
+use burn::{
+    Tensor,
+    config::Config,
+    module::{AutodiffModule, Module},
+    prelude::{Backend, Int},
+    record::Record,
+    tensor::backend::AutodiffBackend,
+    train::{ClassificationOutput, TrainStep},
+};
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::*;
-use std::fs;
+use std::{fmt::Display, fs};
+
+use crate::{
+    data::TextBatch,
+    infer::LanguageModelInference,
+};
 
 #[derive(Debug, PartialEq)]
 pub enum LanguageModel {
@@ -77,4 +91,24 @@ pub fn create_artifact_dir(artifact_dir: &str) {
     // Remove existing artifacts before to get an accurate learner summary
     fs::remove_dir_all(artifact_dir).ok();
     fs::create_dir_all(artifact_dir).ok();
+}
+
+pub trait ModelSpec<B, AD>
+where
+    B: Backend,
+    AD: AutodiffBackend<InnerBackend = B>,
+{
+    type TrainConfig: Config;
+    type TrainModel: TrainStep<Input = TextBatch<AD>, Output = ClassificationOutput<AD>>
+        + AutodiffModule<AD>
+        + Display
+        + 'static;
+    type InferModel: Module<B, Record = Self::Record>
+        + LanguageModelInference<Tokens = Tensor<B, 2, Int>>;
+    type Record: Record<B>;
+
+    fn build_config(vocab: Vec<u8>, args: &AppArgs) -> Self::TrainConfig;
+    fn train_params(config: &Self::TrainConfig) -> (usize, usize, usize, u64, f64);
+    fn init_train(config: &Self::TrainConfig, device: &AD::Device) -> Self::TrainModel;
+    fn init_infer(config: &Self::TrainConfig, device: &B::Device) -> Self::InferModel;
 }
